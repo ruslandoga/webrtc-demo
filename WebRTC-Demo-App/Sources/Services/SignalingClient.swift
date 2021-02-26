@@ -8,6 +8,7 @@
 
 import Foundation
 import WebRTC
+import SwiftPhoenixClient
 
 protocol SignalClientDelegate: class {
     func signalClientDidConnect(_ signalClient: SignalingClient)
@@ -17,77 +18,77 @@ protocol SignalClientDelegate: class {
 }
 
 final class SignalingClient {
-    
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
-    private let webSocket: WebSocketProvider
+    private let socket: Socket
+    private let channel: Channel
     weak var delegate: SignalClientDelegate?
     
-    init(webSocket: WebSocketProvider) {
-        self.webSocket = webSocket
+    init(socket: Socket) {
+        self.socket = socket
+        channel = socket.channel("match:00000177-6929-6fa5-b8e8-56408d820000")
     }
     
     func connect() {
-        self.webSocket.delegate = self
-        self.webSocket.connect()
+        socket.onClose { [unowned self] in
+            self.delegate?.signalClientDidDisconnect(self)
+        }
+        
+        socket.onOpen { [unowned self] in
+            self.delegate?.signalClientDidConnect(self)
+        }
+        
+        socket.logger = { print($0) }
+
+        socket.connect()
+        
+        channel.delegateOn("peer-message", to: self) { (self, message) in
+            guard let body = message.payload["body"] as? String,
+                  let data = body.data(using: .utf8) else { return }
+            
+            let message: Message
+            
+            do {
+                message = try self.decoder.decode(Message.self, from: data)
+            } catch {
+                debugPrint("Warning: Could not decode incoming message: \(error)")
+                return
+            }
+            
+            switch message {
+            case let .candidate(iceCandidate):
+                self.delegate?.signalClient(self, didReceiveCandidate: iceCandidate.rtcIceCandidate)
+            case let .sdp(sessionDescription):
+                self.delegate?.signalClient(self, didReceiveRemoteSdp: sessionDescription.rtcSessionDescription)
+            }
+        }
+        
+        channel.join()
     }
     
     func send(sdp rtcSdp: RTCSessionDescription) {
         let message = Message.sdp(SessionDescription(from: rtcSdp))
+        
         do {
             let dataMessage = try self.encoder.encode(message)
-            
-            self.webSocket.send(data: dataMessage)
-        }
-        catch {
+            channel.push("peer-message", payload: ["body": String(data: dataMessage, encoding: .utf8)!])
+                .receive("ok") { _ in debugPrint("sent sdp")}
+                .receive("error") { _ in debugPrint("error sending sdp")}
+        } catch {
             debugPrint("Warning: Could not encode sdp: \(error)")
         }
     }
     
     func send(candidate rtcIceCandidate: RTCIceCandidate) {
         let message = Message.candidate(IceCandidate(from: rtcIceCandidate))
+       
         do {
             let dataMessage = try self.encoder.encode(message)
-            self.webSocket.send(data: dataMessage)
-        }
-        catch {
+            channel.push("peer-message", payload: ["body": String(data: dataMessage, encoding: .utf8)!])
+                .receive("ok") { _ in debugPrint("sent ice candidate")}
+                .receive("error") { _ in debugPrint("error sending ice candidate")}
+        } catch {
             debugPrint("Warning: Could not encode candidate: \(error)")
         }
-    }
-}
-
-
-extension SignalingClient: WebSocketProviderDelegate {
-    func webSocketDidConnect(_ webSocket: WebSocketProvider) {
-        self.delegate?.signalClientDidConnect(self)
-    }
-    
-    func webSocketDidDisconnect(_ webSocket: WebSocketProvider) {
-        self.delegate?.signalClientDidDisconnect(self)
-        
-        // try to reconnect every two seconds
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-            debugPrint("Trying to reconnect to signaling server...")
-            self.webSocket.connect()
-        }
-    }
-    
-    func webSocket(_ webSocket: WebSocketProvider, didReceiveData data: Data) {
-        let message: Message
-        do {
-            message = try self.decoder.decode(Message.self, from: data)
-        }
-        catch {
-            debugPrint("Warning: Could not decode incoming message: \(error)")
-            return
-        }
-        
-        switch message {
-        case .candidate(let iceCandidate):
-            self.delegate?.signalClient(self, didReceiveCandidate: iceCandidate.rtcIceCandidate)
-        case .sdp(let sessionDescription):
-            self.delegate?.signalClient(self, didReceiveRemoteSdp: sessionDescription.rtcSessionDescription)
-        }
-
     }
 }

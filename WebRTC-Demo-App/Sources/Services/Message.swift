@@ -19,9 +19,11 @@ extension Message: Codable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case String(describing: SessionDescription.self):
-            self = .sdp(try container.decode(SessionDescription.self, forKey: .payload))
-        case String(describing: IceCandidate.self):
-            self = .candidate(try container.decode(IceCandidate.self, forKey: .payload))
+            self = .sdp(try container.decode(SessionDescription.self, forKey: .content))
+        case "video-answer":
+            self = .sdp(try container.decode(SessionDescription.self, forKey: .content))
+        case "ice-candidate":
+            self = .candidate(try container.decode(IceCandidate.self, forKey: .content))
         default:
             throw DecodeError.unknownType
         }
@@ -30,12 +32,12 @@ extension Message: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .sdp(let sessionDescription):
-            try container.encode(sessionDescription, forKey: .payload)
+        case let .sdp(sessionDescription):
+            try container.encode(sessionDescription, forKey: .content)
             try container.encode(String(describing: SessionDescription.self), forKey: .type)
-        case .candidate(let iceCandidate):
-            try container.encode(iceCandidate, forKey: .payload)
-            try container.encode(String(describing: IceCandidate.self), forKey: .type)
+        case let .candidate(iceCandidate):
+            try container.encode(iceCandidate, forKey: .content)
+            try container.encode("ice-candidate", forKey: .type)
         }
     }
     
@@ -44,6 +46,6 @@ extension Message: Codable {
     }
     
     enum CodingKeys: String, CodingKey {
-        case type, payload
+        case type, content
     }
 }

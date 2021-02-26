@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import SwiftPhoenixClient
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -24,32 +25,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     
     private func buildMainViewController() -> UIViewController {
-        
-        let webRTCClient = WebRTCClient(iceServers: self.config.webRTCIceServers)
+        let webRTCClient = WebRTCClient(iceServers: ["stun:global.stun.twilio.com:3478?transport=udp"])
         let signalClient = self.buildSignalingClient()
         let mainViewController = MainViewController(signalClient: signalClient, webRTCClient: webRTCClient)
         let navViewController = UINavigationController(rootViewController: mainViewController)
+        
         if #available(iOS 11.0, *) {
             navViewController.navigationBar.prefersLargeTitles = true
-        }
-        else {
+        } else {
             navViewController.navigationBar.isTranslucent = false
         }
+        
         return navViewController
     }
     
     private func buildSignalingClient() -> SignalingClient {
-        
-        // iOS 13 has native websocket support. For iOS 12 or lower we will use 3rd party library.
-        let webSocketProvider: WebSocketProvider
-        
-        if #available(iOS 13.0, *) {
-            webSocketProvider = NativeWebSocket(url: self.config.signalingServerUrl)
-        } else {
-            webSocketProvider = StarscreamWebSocket(url: self.config.signalingServerUrl)
-        }
-        
-        return SignalingClient(webSocket: webSocketProvider)
+        let socket = Socket("http://192.168.1.51:4000/api/socket", params: ["token": "q--FExlXrZZTOcQtqQEHlcZv23myD0YnPSXxH0vcduw"])
+        return SignalingClient(socket: socket)
     }
 }
 

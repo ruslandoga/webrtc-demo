@@ -31,9 +31,9 @@ struct SessionDescription: Codable {
         self.sdp = rtcSessionDescription.sdp
         
         switch rtcSessionDescription.type {
-        case .offer:    self.type = .offer
+        case .offer: self.type = .offer
         case .prAnswer: self.type = .prAnswer
-        case .answer:   self.type = .answer
+        case .answer: self.type = .answer
         @unknown default:
             fatalError("Unknown RTCSessionDescription type: \(rtcSessionDescription.type.rawValue)")
         }
